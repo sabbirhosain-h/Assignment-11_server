@@ -31,7 +31,7 @@ async function run() {
 
     //root route
     app.get('/', (req, res) => {
-    res.send('Hello World!')
+    res.send('Hello from LibrisGo Server')
     })
 
     // all books
@@ -72,7 +72,12 @@ async function run() {
     })
 
 
-    
+    // Add books
+    app.post("/AllBooks" , async (req , res)=>{
+        const newBook = req.body;
+        const result = await AllBookCollection.insertOne({ ...newBook, createdAt: new Date() });
+        res.send(result);
+    })
 
     // error api
     app.all(/.*/, (req,res)=>{
