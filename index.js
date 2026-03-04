@@ -1,7 +1,7 @@
 const express = require('express');
 const app = express();
 const cors = require("cors");
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
 
 // middlewear
@@ -28,6 +28,7 @@ async function run() {
     // await client.connect();
     const DB = client.db("LibrisGo");
     const AllBookCollection = DB.collection("AllBooks");
+    const PaymentHistory = DB.collection("Payment");
 
     //root route
     app.get('/', (req, res) => {
@@ -72,12 +73,81 @@ async function run() {
     })
 
 
+
     // Add books
     app.post("/AllBooks" , async (req , res)=>{
         const newBook = req.body;
         const result = await AllBookCollection.insertOne({ ...newBook, createdAt: new Date() });
         res.send(result);
+    });
+
+
+    // get single book
+    app.get("/AllBooks/:id", async (req , res )=> {
+      const  id  = req.params.id;
+      try {
+        const book = await AllBookCollection.findOne({ _id: new ObjectId(id) });
+        if (!book) {
+      return res.status(404).json({ message: "Book not found" });
+      }
+
+      res.status(200).send(book);
+      } catch (error) {
+         res.status(400).json({ message: "Invalid book ID" });
+      }
     })
+
+    // payment  posting
+    app.post("/payment", async (req, res) => {
+        try {
+           const paymentInfo = req.body;
+           const result = await PaymentHistory.insertOne({
+             bookId: paymentInfo.id,       
+             email: paymentInfo.email,       
+             author: paymentInfo.author,       
+             phone: paymentInfo.phone,
+             address: paymentInfo.address,
+             url: paymentInfo.url,
+             bookName: paymentInfo.bookName,
+             price: paymentInfo.price,
+             status: "pending",
+             createdAt: new Date()
+            });
+
+          res.send({ success: true, insertedId: result.insertedId});
+        } catch (error) {
+             res.status(500).send({ error: "Payment failed" });
+        }
+    });
+
+    // payment history
+    app.get("/payment", async (req,res)=>{
+      const {id} = req.query;
+      if (!id) {
+        return res.status(400).send({ error: "id is required" });
+      }
+      const result = await PaymentHistory.findOne({ bookId : id })
+      console.log(result)
+      res.status(200).send(result);
+    });
+
+    // My orders
+    app.get("/MyOrders", async (req, res) => {
+       try {
+         const { e } = req.query;
+
+         if (!e) {
+          return res.status(400).send({ error: "email is required" });
+          }
+
+         const result = await PaymentHistory.find({ email: e }).toArray();  
+         res.send(result);
+        } catch (error) {
+          console.error("MyOrders error:", error);
+          res.status(500).send({ error: "Failed to fetch orders" });
+        }
+      });
+
 
     // error api
     app.all(/.*/, (req,res)=>{
