@@ -98,27 +98,28 @@ async function run() {
     })
 
     // payment  posting
-    app.post("/payment", async (req, res) => {
-        try {
-           const paymentInfo = req.body;
-           const result = await PaymentHistory.insertOne({
-             bookId: paymentInfo.id,       
-             email: paymentInfo.email,       
-             author: paymentInfo.author,       
-             phone: paymentInfo.phone,
-             address: paymentInfo.address,
-             url: paymentInfo.url,
-             bookName: paymentInfo.bookName,
-             price: paymentInfo.price,
-             status: "pending",
-             createdAt: new Date()
-            });
+      app.post("/payment", async (req, res) => {
+          try {
+            const paymentInfo = req.body;
+            const result = await PaymentHistory.insertOne({
+              bookId: paymentInfo.id,       
+              email: paymentInfo.email,       
+              author: paymentInfo.author,       
+              phone: paymentInfo.phone,
+              address: paymentInfo.address,
+              url: paymentInfo.url,
+              bookName: paymentInfo.bookName,
+              price: paymentInfo.price,
+              status: "pending",
+              payment: "Unpaid",
+              createdAt: new Date()
+              });
 
-          res.send({ success: true, insertedId: result.insertedId});
-        } catch (error) {
-             res.status(500).send({ error: "Payment failed" });
-        }
-    });
+            res.send({ success: true, insertedId: result.insertedId});
+          } catch (error) {
+              res.status(500).send({ error: "Payment failed" });
+          }
+      });
 
     // payment history
     app.get("/payment", async (req,res)=>{
@@ -127,7 +128,7 @@ async function run() {
         return res.status(400).send({ error: "id is required" });
       }
       const result = await PaymentHistory.findOne({ bookId : id })
-      console.log(result)
+     
       res.status(200).send(result);
     });
 
@@ -147,6 +148,51 @@ async function run() {
           res.status(500).send({ error: "Failed to fetch orders" });
         }
       });
+
+    // calcle order and chnage 
+    app.patch("/payment/cancel/:id", async (req, res) => {
+
+          try {
+             const { id } = req.params;
+
+             const result = await PaymentHistory.updateOne(
+                { _id: new ObjectId(id) },
+                { $set: { status: "canceled" } }
+              );
+              console.log(result)
+            if (result.modifiedCount === 0) {
+              return res.status(404).send({ error: "Order not found" });
+            }
+
+            res.send({ success: true, message: "Order canceled" });
+          } catch (error) {
+             console.error(error);
+               res.status(500).send({ error: "Failed to cancel order" });
+          }
+    });
+
+    // payment confermation
+    app.patch("/payment/success/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await PaymentHistory.updateOne(
+      { bookId: id },  
+      { $set: { payment: "Paid" } }
+    );
+
+    console.log(id, result);
+
+    if (result.modifiedCount === 0) {
+      return res.status(404).send({ error: "Payment not done" });
+    }
+
+    res.send({ success: true, message: "Payment Done" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ error: "Failed to update payment" });
+  }
+});
 
 
     // error api
