@@ -29,6 +29,7 @@ async function run() {
     const DB = client.db("LibrisGo");
     const AllBookCollection = DB.collection("AllBooks");
     const PaymentHistory = DB.collection("Payment");
+    const WishlistCollection = DB.collection("Wishlist");
 
     //root route
     app.get('/', (req, res) => {
@@ -71,7 +72,6 @@ async function run() {
 
         res.send({result , total:count});
     })
-
 
 
     // Add books
@@ -149,7 +149,7 @@ async function run() {
         }
       });
 
-    // calcle order and chnage 
+    // cancle order and chnage 
     app.patch("/payment/cancel/:id", async (req, res) => {
 
           try {
@@ -159,7 +159,7 @@ async function run() {
                 { _id: new ObjectId(id) },
                 { $set: { status: "canceled" } }
               );
-              console.log(result)
+             
             if (result.modifiedCount === 0) {
               return res.status(404).send({ error: "Order not found" });
             }
@@ -181,7 +181,7 @@ async function run() {
       { $set: { payment: "Paid" } }
     );
 
-    console.log(id, result);
+    
 
     if (result.modifiedCount === 0) {
       return res.status(404).send({ error: "Payment not done" });
@@ -192,9 +192,63 @@ async function run() {
     console.error(error);
     res.status(500).send({ error: "Failed to update payment" });
   }
+    });
+
+    // add to the wishlist
+   app.post("/Wishlist/:id", async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const findBook = await AllBookCollection.findOne({ _id: new ObjectId(id) });
+
+        if (findBook) {
+            const existing = await WishlistCollection.findOne({ _id: new ObjectId(id) });
+            
+            if (existing) {
+                return res.status(200).json({ message: "Already in wishlist" });
+            }
+
+            await WishlistCollection.insertOne(findBook);
+            res.status(200).send(findBook);
+        } else {
+            res.status(404).json({ message: "Book not found" });
+        }
+    } catch (error) {
+        console.error("Exact error:", error.message);
+        res.status(500).json({ message: error.message });
+    }
+   }); 
+
+  //  get my Wishlist
+   app.get("/MyWishlist", async (req, res) => {
+    const { email } = req.query;
+
+    try {
+        const books = await WishlistCollection.find({ email: email }).toArray();
+        res.status(200).send(books);
+    } catch (error) {
+        console.error("Error:", error.message);
+        res.status(500).json({ message: error.message });
+    }
+   });
+
+  //  remove from wishlist
+  app.delete("/Wishlist/remove/:id", async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const result = await WishlistCollection.deleteOne({ _id: new ObjectId(id) });
+        
+        if (result.deletedCount === 1) {
+            res.status(200).json({ message: "Removed from wishlist" });
+        } else {
+            res.status(404).json({ message: "Book not found in wishlist" });
+        }
+    } catch (error) {
+        console.error("Error:", error.message);
+        res.status(500).json({ message: error.message });
+    }
 });
-
-
     // error api
     app.all(/.*/, (req,res)=>{
         res.status(404).json({
