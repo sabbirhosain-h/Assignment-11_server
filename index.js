@@ -33,6 +33,7 @@ async function run() {
     const AllBookCollection = DB.collection("AllBooks");
     const PaymentHistory = DB.collection("Payment");
     const WishlistCollection = DB.collection("Wishlist");
+    const InvoiceCollection = DB.collection("Invoice");
 
     //root route
     app.get('/', (req, res) => {
@@ -135,9 +136,6 @@ async function run() {
       res.status(200).send(result);
     });
 
-
-
-
     // My orders
     app.get("/MyOrders", async (req, res) => {
       try {
@@ -177,16 +175,15 @@ async function run() {
       }
     });
 
-  
     // payment link
     app.post("/makePayment", async (req, res) => {
       try {
-        const { finalPrice , Book , i , totalPrice} = req.body;
+        const { finalPrice, Book, totalPrice, bookId } = req.body;
 
-      
+
         const orderId = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
-       
+
         const session = await stripe.checkout.sessions.create({
           mode: "payment",
 
@@ -199,7 +196,7 @@ async function run() {
                 product_data: {
                   name: Book,
                 },
-                unit_amount: Math.round(finalPrice * 10), 
+                unit_amount: Math.round(finalPrice * 10),
               },
               quantity: 1,
             },
@@ -208,16 +205,16 @@ async function run() {
           metadata: {
             orderId: orderId,
             bookName: Book,
-            id: i,
             price: totalPrice,
             date: new Date().toISOString(),
+            bookId: bookId
           },
 
           success_url: `${process.env.MY_DOMAIN}/PaySuccess?session_id={CHECKOUT_SESSION_ID}`,
           cancel_url: `${process.env.MY_DOMAIN}/payment/cancel`,
         });
 
-        res.status(200).send({checkoutUrl: session.url, orderId, })
+        res.status(200).send({ checkoutUrl: session.url, orderId, })
       } catch (error) {
         console.error("MAKE PAYMENT ERROR:", error);
         res.status(500).json({ error: "Order creation failed" });
@@ -225,44 +222,37 @@ async function run() {
     });
 
     // payment verificatin
-    app.patch("/verifyPayment", async (req,res)=>{
-      const session_id = req.query.session_id;
-      
-      const session = await stripe.checkout.sessions.retrieve(session_id);
-       
-
-      const bookName = session.metadata.bookName; 
-      const orderId = session.metadata.orderId;
-      const price = session.metadata.price;
-      const date = session.metadata.date;
-      const Id = session.metadata.id;
-      
-
-      const data = { bookName, orderId , price, date }
-      res.status(200).send(data)
-
-       try {
-      
-        const result = await PaymentHistory.updateOne(
-          { bookId: Id },
-          { $set: { payment: "Paid" } }
-        );
-
-        if (result.modifiedCount === 0) {
-          return res.status(404).send({ error: "Payment not done" });
+    app.patch("/verifyPayment", async (req, res) => {
+      try {
+        const session_id = req.query.session_id;
+        if (!session_id) {
+          return res.status(400).json({ message: "session_id missing" });
         }
 
-        res.send({ success: true, message: "Payment Done" });
+        const session = await stripe.checkout.sessions.retrieve(session_id);
+
+        const { bookName, orderId, price, date, bookId } = session.metadata;
+
+       
+        const updateResult = await PaymentHistory.updateOne(
+          { bookId: bookId },
+          {
+            $set: {
+              payment: "Paid",
+            }
+          }
+        );
+
+        console.log("Payment update result:", updateResult);
+
+       
+        return res.status(200).json({ bookName, orderId,  price, date });
+
       } catch (error) {
-        console.error(error);
-        res.status(500).send({ error: "Failed to update payment" });
+        console.error("VERIFY ERROR:", error);
+        return res.status(500).json({ error: "Failed to verify payment" });
       }
-
-  });
-
-
-  
-
+    });
     // add to the wishlist
     app.post("/Wishlist/:id", async (req, res) => {
       const { id } = req.params;
@@ -319,8 +309,37 @@ async function run() {
       }
     });
 
+    // invoice HIstory
+    app.post("/Invoice", async (req, res) => {
+      try {
+        const invoice = req.body;
 
+        const existing = await InvoiceCollection.findOne({ orderId: invoice.orderId });
+        if (existing) {
+          return res.send({ message: "Invoice already exists" });
+        }
 
+        const result = await InvoiceCollection.insertOne(invoice);
+
+        return res.send(result);
+      } catch (error) {
+        console.error(error);
+        return res.status(500).json({ error: "Failed to save invoice" });
+      }
+    });
+
+    // get my invoice
+    app.get("/Invoice", async (req, res) => {
+      try {
+        const { Myemail } = req.query;
+        const MyInv = await InvoiceCollection.find({ email: Myemail }).toArray();
+
+        return res.send(MyInv);
+      } catch (error) {
+        console.error(error);
+        return res.status(500).json({ error: "Failed to fetch invoices" });
+      }
+    });
 
 
     // error api
