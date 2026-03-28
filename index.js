@@ -5,6 +5,14 @@ require('dotenv').config();
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const Stripe = require("stripe");
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
+const admin = require("firebase-admin");
+
+const serviceAccount = require("./librisgo-firebase-admin.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+
 
 
 
@@ -12,9 +20,39 @@ const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 app.use(cors());
 app.use(express.json());
 
+const verifyToken = async (req, res, next) => {
+  const token = req.headers.authorization;
+  if (!token) {
+    res.status(401).send({ massage: "Unauthorized access" });
+  }
+  try {
+    const idToken = token.split(" ")[1];
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    req.decoded_email = decoded.email;
+
+  } catch (error) {
+    res.status(401).send({ massage: "Unauthorized access" });
+
+  }
+
+  next();
+}
+const verifyAdmin = async (req, res, next) => {
+  const email = req.decoded?.email;
+  if (!email) return res.status(401).json({ message: "Unauthorized" });
+
+  const user = await UserCollections.findOne({ email });
+  if (user?.role !== "admin") {
+    return res.status(403).json({ message: "Forbidden: Admins only" });
+  }
+  next();
+};
+
 
 const port = 3000;
-const uri = `mongodb+srv://${process.env.Db_Username}:${process.env.Db_Password}@crud.7q5wtjc.mongodb.net/?appName=CRUD`;
+// const uri = `mongodb://:@crud.7q5wtjc.mongodb.net/?appName=CRUD`;
+const uri = `mongodb://${process.env.Db_Username}:${process.env.Db_Password}@ac-d7aulfr-shard-00-00.7q5wtjc.mongodb.net:27017,ac-d7aulfr-shard-00-01.7q5wtjc.mongodb.net:27017,ac-d7aulfr-shard-00-02.7q5wtjc.mongodb.net:27017/?ssl=true&replicaSet=atlas-4ayi20-shard-0&authSource=admin&appName=CRUD`;
+
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -34,6 +72,7 @@ async function run() {
     const PaymentHistory = DB.collection("Payment");
     const WishlistCollection = DB.collection("Wishlist");
     const InvoiceCollection = DB.collection("Invoice");
+    const UserCollections = DB.collection("Users")
 
     //root route
     app.get('/', (req, res) => {
@@ -137,9 +176,12 @@ async function run() {
     });
 
     // My orders
-    app.get("/MyOrders", async (req, res) => {
+    app.get("/MyOrders", verifyToken, async (req, res) => {
       try {
         const { e } = req.query;
+        if (e !== req.decoded_email) {
+          return res.status(403).send({ massage: "forbiden access" })
+        }
 
         if (!e) {
           return res.status(400).send({ error: "email is required" });
@@ -233,7 +275,7 @@ async function run() {
 
         const { bookName, orderId, price, date, bookId } = session.metadata;
 
-       
+
         const updateResult = await PaymentHistory.updateOne(
           { bookId: bookId },
           {
@@ -243,16 +285,16 @@ async function run() {
           }
         );
 
-        console.log("Payment update result:", updateResult);
 
-       
-        return res.status(200).json({ bookName, orderId,  price, date });
+
+        return res.status(200).json({ bookName, orderId, price, date });
 
       } catch (error) {
         console.error("VERIFY ERROR:", error);
         return res.status(500).json({ error: "Failed to verify payment" });
       }
     });
+
     // add to the wishlist
     app.post("/Wishlist/:id", async (req, res) => {
       const { id } = req.params;
@@ -341,6 +383,63 @@ async function run() {
       }
     });
 
+    // create role
+    app.post("/users", async (req, res) => {
+      const user = req.body;
+
+      const existingUser = await UserCollections.findOne({ email: user.email });
+      if (existingUser) {
+        return res.send({ message: "User already exists", inserted: false });
+      }
+
+      user.role = "user";
+      user.createdAt = new Date();
+
+      const result = await UserCollections.insertOne(user);
+      res.send({ ...result, inserted: true });
+    });
+
+    // get all users
+    app.get("/users", verifyToken, async (req, res) => {
+      const email = req.decoded_email;
+      // if (!email) return res.status(401).json({ message: "Unauthorized" });
+
+      const user = await UserCollections.findOne({ email });
+      if (user?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admins only" });
+      } else {
+        const result = await UserCollections.find().toArray();
+        res.send(result);
+      }
+
+    })
+
+    // PATCH /users/:id/role
+    app.patch("/users/:id/role", verifyToken, async (req, res) => {
+      const { id } = req.params;
+      const { role } = req.body;
+
+      const allowedRoles = ["user", "admin", "librarian"];
+      if (!allowedRoles.includes(role)) {
+        return res.status(400).json({ message: "Invalid role" });
+      }
+
+      try {
+        const result = await UserCollections.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { role } }
+        );
+
+        if (result.matchedCount === 0) {
+          return res.status(404).json({ message: "User not found" });
+        }
+
+        res.json({ success: true, message: `Role updated to ${role}` });
+      } catch (error) {
+        console.error("Role update error:", error);
+        res.status(500).json({ message: "Server error" });
+      }
+    });
 
     // error api
     app.all(/.*/, (req, res) => {
@@ -361,5 +460,6 @@ run().catch(console.dir);
 
 
 app.listen(port, () => {
+  console.log(process.env.Db_Username, process.env.Db_Password)
   console.log(`Example app listening on port ${port}`)
 })
