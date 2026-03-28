@@ -402,7 +402,7 @@ async function run() {
     // get all users
     app.get("/users", verifyToken, async (req, res) => {
       const email = req.decoded_email;
-      // if (!email) return res.status(401).json({ message: "Unauthorized" });
+      if (!email) return res.status(401).json({ message: "Unauthorized" });
 
       const user = await UserCollections.findOne({ email });
       if (user?.role !== "admin") {
@@ -440,6 +440,37 @@ async function run() {
         res.status(500).json({ message: "Server error" });
       }
     });
+
+    // manage books 
+    app.get("/manageBooks", async (req, res) => {
+      const result = await AllBookCollection.find({}, { projection: { createdAt: 0, description: 0, email: 0, payment: 0, } }).toArray();
+      res.send(result)
+    });
+
+    // Toggle status
+    app.patch("/manageBooks/:id/status", verifyToken, async (req, res) => {
+      const { id } = req.params;
+      const { status } = req.body;
+
+      const allowed = ["published", "unpublished"];
+      if (!allowed.includes(status))
+        return res.status(400).json({ message: "Invalid status" });
+
+      const result = await AllBookCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { status } }
+      );
+      res.send(result);
+    });
+
+    // Delete book
+    app.delete("/manageBooks/:id", verifyToken, async (req, res) => {
+      const { id } = req.params;
+      const result = await AllBookCollection.deleteOne({ _id: new ObjectId(id) });
+      res.send(result);
+    });
+
+
 
     // error api
     app.all(/.*/, (req, res) => {
