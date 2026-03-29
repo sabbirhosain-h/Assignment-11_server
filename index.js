@@ -23,20 +23,17 @@ app.use(express.json());
 const verifyToken = async (req, res, next) => {
   const token = req.headers.authorization;
   if (!token) {
-    res.status(401).send({ massage: "Unauthorized access" });
+    return res.status(401).send({ message: "Unauthorized access" });
   }
   try {
     const idToken = token.split(" ")[1];
     const decoded = await admin.auth().verifyIdToken(idToken);
     req.decoded_email = decoded.email;
-
+    next();
   } catch (error) {
-    res.status(401).send({ massage: "Unauthorized access" });
-
+    return res.status(401).send({ message: "Unauthorized access" });
   }
-
-  next();
-}
+};
 const verifyAdmin = async (req, res, next) => {
   const email = req.decoded?.email;
   if (!email) return res.status(401).json({ message: "Unauthorized" });
@@ -467,6 +464,48 @@ async function run() {
     app.delete("/manageBooks/:id", verifyToken, async (req, res) => {
       const { id } = req.params;
       const result = await AllBookCollection.deleteOne({ _id: new ObjectId(id) });
+      res.send(result);
+    });
+
+    // GET my books — verify the email matches the token
+    app.get("/myBooks", verifyToken, async (req, res) => {
+      const { email } = req.query;
+
+      if (req.decoded_email !== email) {
+        return res.status(403).send({ message: "Forbidden access" });
+      }
+
+      const result = await AllBookCollection.find(
+        { email },
+        { projection: { description: 0 } }
+      ).toArray();
+      res.send(result);
+    });
+
+    // GET single book by id
+    app.get("/books/:id", verifyToken, async (req, res) => {
+      const result = await AllBookCollection.findOne({
+        _id: new ObjectId(req.params.id)
+      });
+      if (!result) return res.status(404).send({ message: "Book not found" });
+      res.send(result);
+    });
+
+    // PUT update book — verify the book belongs to the requester
+    app.put("/books/:id", verifyToken, async (req, res) => {
+      const { id } = req.params;
+
+      const book = await AllBookCollection.findOne({ _id: new ObjectId(id) });
+      if (!book) return res.status(404).send({ message: "Book not found" });
+
+      if (req.decoded_email !== book.email) {
+        return res.status(403).send({ message: "Forbidden access" });
+      }
+
+      const result = await AllBookCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: req.body }
+      );
       res.send(result);
     });
 
