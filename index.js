@@ -34,16 +34,7 @@ const verifyToken = async (req, res, next) => {
     return res.status(401).send({ message: "Unauthorized access" });
   }
 };
-const verifyAdmin = async (req, res, next) => {
-  const email = req.decoded?.email;
-  if (!email) return res.status(401).json({ message: "Unauthorized" });
 
-  const user = await UserCollections.findOne({ email });
-  if (user?.role !== "admin") {
-    return res.status(403).json({ message: "Forbidden: Admins only" });
-  }
-  next();
-};
 
 
 const port = 3000;
@@ -70,6 +61,24 @@ async function run() {
     const WishlistCollection = DB.collection("Wishlist");
     const InvoiceCollection = DB.collection("Invoice");
     const UserCollections = DB.collection("Users")
+
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.decoded_email;
+      const user = await UserCollections.findOne({ email });
+      if (user?.role !== "admin") {
+        return res.status(403).send({ message: "Admins only" });
+      }
+      next();
+    };
+
+    const verifyLibrarian = async (req, res, next) => {
+      const email = req.decoded_email;
+      const user = await UserCollections.findOne({ email });
+      if (user?.role !== "librarian") {
+        return res.status(403).send({ message: "Librarians only" });
+      }
+      next();
+    };
 
     //root route
     app.get('/', (req, res) => {
@@ -142,6 +151,7 @@ async function run() {
       try {
         const paymentInfo = req.body;
         const result = await PaymentHistory.insertOne({
+          BuyerName: paymentInfo.buyerName,
           bookId: paymentInfo.id,
           email: paymentInfo.email,
           author: paymentInfo.author,
@@ -220,7 +230,7 @@ async function run() {
         const { finalPrice, Book, totalPrice, bookId } = req.body;
 
 
-        const orderId = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+       const orderId = `ORD-${Math.floor(100000 + Math.random() * 900000)}`;
 
 
         const session = await stripe.checkout.sessions.create({
@@ -411,7 +421,7 @@ async function run() {
 
     })
 
-    // PATCH /users/:id/role
+    // update role 
     app.patch("/users/:id/role", verifyToken, async (req, res) => {
       const { id } = req.params;
       const { role } = req.body;
@@ -461,18 +471,23 @@ async function run() {
     });
 
     // Delete book
-    app.delete("/manageBooks/:id", verifyToken, async (req, res) => {
+    app.delete("/manageBooks/:id", verifyToken, verifyLibrarian,  async (req, res) => {
       const { id } = req.params;
       const result = await AllBookCollection.deleteOne({ _id: new ObjectId(id) });
       res.send(result);
     });
 
-    // GET my books — verify the email matches the token
-    app.get("/myBooks", verifyToken, async (req, res) => {
+    // librarian books  
+    app.get("/myBooks", verifyToken, verifyLibrarian,  async (req, res) => {
       const { email } = req.query;
 
       if (req.decoded_email !== email) {
         return res.status(403).send({ message: "Forbidden access" });
+      }
+
+      const user = await UserCollections.findOne({ email });
+      if (user?.role !== "librarian") {
+        return res.status(403).send({ message: "Librarians only" });
       }
 
       const result = await AllBookCollection.find(
@@ -483,7 +498,7 @@ async function run() {
     });
 
     // GET single book by id
-    app.get("/books/:id", verifyToken, async (req, res) => {
+    app.get("/books/:id", verifyToken,verifyLibrarian,  async (req, res) => {
       const result = await AllBookCollection.findOne({
         _id: new ObjectId(req.params.id)
       });
@@ -491,7 +506,7 @@ async function run() {
       res.send(result);
     });
 
-    // PUT update book — verify the book belongs to the requester
+    // update book 
     app.put("/books/:id", verifyToken, async (req, res) => {
       const { id } = req.params;
 
@@ -509,6 +524,40 @@ async function run() {
       res.send(result);
     });
 
+    // get order managemennt 
+    app.get("/manageOrder", verifyToken, verifyLibrarian, async (req, res) => {
+      const email = req.decoded_email;
+
+      const result = await PaymentHistory.find(
+        { email },
+        {payment: "paid"},
+        {
+          projection: {
+            description: 0,
+            bookId: 0,
+          }
+        }
+      ).toArray();
+      console.log(result)
+      res.send(result);
+    });
+
+    // manage order status 
+    app.patch("/manageOrder/:id/status", verifyToken, verifyLibrarian, async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    const allowed = ["pending", "shipping", "delivered", "cancelled"];
+    if (!allowed.includes(status)) {
+        return res.status(400).send({ message: "Invalid status" });
+    }
+
+    const result = await PaymentHistory.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { status } }
+    );
+    res.send(result);
+});
 
 
     // error api
