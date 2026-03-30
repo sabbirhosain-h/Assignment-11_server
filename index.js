@@ -66,6 +66,7 @@ async function run() {
       const email = req.decoded_email;
       const user = await UserCollections.findOne({ email });
       if (user?.role !== "admin") {
+       
         return res.status(403).send({ message: "Admins only" });
       }
       next();
@@ -75,6 +76,7 @@ async function run() {
       const email = req.decoded_email;
       const user = await UserCollections.findOne({ email });
       if (user?.role !== "librarian") {
+        
         return res.status(403).send({ message: "Librarians only" });
       }
       next();
@@ -84,6 +86,23 @@ async function run() {
     app.get('/', (req, res) => {
       res.send('Hello from LibrisGo Server')
     })
+
+    // users role 
+   app.get("/Role", verifyToken, async (req, res) => {
+  try {
+    const email = req.decoded_email;
+    const user = await UserCollections.findOne({ email });
+    console.log(user)
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    const result = user.role;
+
+    res.send(result)
+  } catch (error) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
 
     // all books
     app.get("/AllBooks", async (req, res) => {
@@ -124,7 +143,7 @@ async function run() {
 
 
     // Add books
-    app.post("/AllBooks", async (req, res) => {
+    app.post("/AllBooks",verifyToken, verifyLibrarian,  async (req, res) => {
       const newBook = req.body;
       const result = await AllBookCollection.insertOne({ ...newBook, createdAt: new Date() });
       res.send(result);
@@ -147,7 +166,7 @@ async function run() {
     })
 
     // payment  posting
-    app.post("/payment", async (req, res) => {
+    app.post("/payment",verifyToken, async (req, res) => {
       try {
         const paymentInfo = req.body;
         const result = await PaymentHistory.insertOne({
@@ -172,7 +191,7 @@ async function run() {
     });
 
     // payment history
-    app.get("/payment", async (req, res) => {
+    app.get("/payment", verifyToken, async (req, res) => {
       const { id } = req.query;
       if (!id) {
         return res.status(400).send({ error: "id is required" });
@@ -407,7 +426,7 @@ async function run() {
     });
 
     // get all users
-    app.get("/users", verifyToken, async (req, res) => {
+    app.get("/users", verifyToken, verifyAdmin ,  async (req, res) => {
       const email = req.decoded_email;
       if (!email) return res.status(401).json({ message: "Unauthorized" });
 
@@ -422,7 +441,7 @@ async function run() {
     })
 
     // update role 
-    app.patch("/users/:id/role", verifyToken, async (req, res) => {
+    app.patch("/users/:id/role", verifyToken, verifyAdmin, async (req, res) => {
       const { id } = req.params;
       const { role } = req.body;
 
@@ -449,13 +468,13 @@ async function run() {
     });
 
     // manage books 
-    app.get("/manageBooks", async (req, res) => {
+    app.get("/manageBooks",verifyToken, verifyAdmin, async (req, res) => {
       const result = await AllBookCollection.find({}, { projection: { createdAt: 0, description: 0, email: 0, payment: 0, } }).toArray();
       res.send(result)
     });
 
     // Toggle status
-    app.patch("/manageBooks/:id/status", verifyToken, async (req, res) => {
+    app.patch("/manageBooks/:id/status", verifyToken, verifyLibrarian,  async (req, res) => {
       const { id } = req.params;
       const { status } = req.body;
 
@@ -507,7 +526,7 @@ async function run() {
     });
 
     // update book 
-    app.put("/books/:id", verifyToken, async (req, res) => {
+    app.put("/books/:id", verifyToken, verifyLibrarian, async (req, res) => {
       const { id } = req.params;
 
       const book = await AllBookCollection.findOne({ _id: new ObjectId(id) });
@@ -538,7 +557,7 @@ async function run() {
           }
         }
       ).toArray();
-      console.log(result)
+      
       res.send(result);
     });
 
@@ -579,6 +598,5 @@ run().catch(console.dir);
 
 
 app.listen(port, () => {
-  console.log(process.env.Db_Username, process.env.Db_Password)
   console.log(`Example app listening on port ${port}`)
-})
+});
