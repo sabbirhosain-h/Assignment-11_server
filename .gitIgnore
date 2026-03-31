@@ -2,3 +2,6 @@
 node_modules
 package-lock.json
 librisgo-firebase-admin.json
+vercel.json
+KeyCon.js
+.vercel

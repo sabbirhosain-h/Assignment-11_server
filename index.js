@@ -7,15 +7,18 @@ const Stripe = require("stripe");
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 const admin = require("firebase-admin");
 
-const serviceAccount = require("./librisgo-firebase-admin.json");
+// const serviceAccount = require("./librisgo-firebase-admin.json");
 
+// admin.initializeApp({
+//   credential: admin.credential.cert(serviceAccount)
+// });
+
+
+const decoded = Buffer.from(process.env.SERVICE_KEY, 'base64').toString('utf8')
+const serviceAccount = JSON.parse(decoded);
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
 });
-
-
-
-
 // middlewear
 app.use(cors());
 app.use(express.json());
@@ -441,7 +444,7 @@ async function run() {
     })
 
     // update role 
-    app.patch("/users/:id/role", verifyToken, verifyAdmin, async (req, res) => {
+    app.patch("/users/:id/role", verifyToken, async (req, res) => {
       const { id } = req.params;
       const { role } = req.body;
 
@@ -490,7 +493,7 @@ async function run() {
     });
 
     // Delete book
-    app.delete("/manageBooks/:id", verifyToken, verifyLibrarian,  async (req, res) => {
+    app.delete("/manageBooks/:id", verifyToken,  async (req, res) => {
       const { id } = req.params;
       const result = await AllBookCollection.deleteOne({ _id: new ObjectId(id) });
       res.send(result);
